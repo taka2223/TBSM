@@ -1,0 +1,81 @@
+experiment:
+  save_dir: ./outputs/tbsm_ablation_rho_lam/tbsm_jit_b_lam=1p0_rho=1p0
+  resume: ""
+  init_weights: /path/to/your/model_zoo/converted_ckpts/jit_b_model_backbone.pt
+
+runtime:
+  nproc_per_node: 8
+  seed: 42
+  deterministic: false
+
+data:
+  name: in1k
+  data_dir: /path/to/your/data/ImageNet-1K
+  cache_dir: ./outputs/dataset_cache
+  resolution: 256
+  num_classes: 1000
+  num_workers: 8
+
+network:
+  name: jit_b
+  params:
+    input_size: 256
+    learned_pe: true
+
+method:
+  name: tbsm
+  params:
+    matchers:
+      - representor:
+          arch: mae_b
+          input_size: 224
+          ckpt_path: /path/to/your/model_zoo/pretrained/mae/vit_base_patch16_224.mae.pth
+        params:
+          intra_weight: 1.0
+          track_weight: 1.0
+          loss_weight: 1.0
+      - representor:
+          arch: siglip2_b
+          input_size: 256
+          ckpt_path: /path/to/your/model_zoo/pretrained/siglip2/siglip2-base-patch16-256
+        params:
+          intra_weight: 1.0
+          track_weight: 1.0
+          loss_weight: 1.0
+      - representor:
+          arch: resnet18
+          input_size: 224
+          ckpt_path: /path/to/your/model_zoo/pretrained/resnet/resnet18-f37072fd.pth
+        params:
+          intra_weight: 1.0
+          track_weight: 1.0
+          loss_weight: 1.0
+    trainer:
+      gen_lr: 1.0e-5
+      tracker_lr: 1.0e-3
+      ema_decay: 0.999
+      t_sampling: [1.0]
+training:
+  batch_size: 32
+  total_steps: 5000
+  bf16: true
+  log_every: 50
+  vis_every: 1000
+  save_every: 5000
+
+evaluation:
+  checkpoint: ./outputs/tbsm_ablation_rho_lam/tbsm_jit_b_lam=1p0_rho=1p0/tbsm_step_5000.pt
+  weights: ema
+  batch_size: 256
+  num_images: 50000
+  seed: 1
+  dtype: bf16
+  models:
+    - inception
+    - vit_large_patch16_224.mae
+    - vit_large_patch14_dinov2.lvd142m
+    - vit_large_patch14_clip_224.openai
+    - vit_so400m_patch16_siglip_256.v2_webli
+    - convnext
+  no_prc: false
+  eval_mmd: false

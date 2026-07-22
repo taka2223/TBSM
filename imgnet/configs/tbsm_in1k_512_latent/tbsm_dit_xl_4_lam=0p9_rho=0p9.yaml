@@ -1,0 +1,84 @@
+experiment:
+  save_dir: ./outputs/tbsm_in1k_512_latent/tbsm_dit_xl_4_lam=0p9_rho=0p9
+  resume: ""
+  init_weights: /path/to/your/checkpoints/dit_xl_4.pt
+
+runtime:
+  nproc_per_node: 8
+  seed: 42
+  deterministic: false
+
+data:
+  name: in1k_latent
+  data_dir: /path/to/your/data/ImageNet-1K/latents/sdvae_f8c4/train_512
+  resolution: 512
+  num_classes: 1000
+  num_workers: 8
+
+latent:
+  channels: 4
+  downsample_ratio: 8
+  multiplier: 0.18215
+  decoder_path: /path/to/your/model_zoo/pretrained/sdvae/sd-vae-ft-ema
+
+network:
+  name: dit_xl_4
+  params:
+    input_size: 64
+    in_channels: 4
+  adapter:
+    source_prediction_type: velocity
+    source_interpolation_direction: data_to_noise
+    target_prediction_type: x
+    target_interpolation_direction: data_to_noise
+
+method:
+  name: tbsm
+  params:
+    matchers:
+      - representor:
+          arch: mae_b
+          input_size: 224
+          ckpt_path: /path/to/your/model_zoo/pretrained/mae/vit_base_patch16_224.mae.pth
+        params: {intra_weight: 0.9, track_weight: 0.9, loss_weight: 1.0}
+      - representor:
+          arch: siglip2_b
+          input_size: 256
+          ckpt_path: /path/to/your/model_zoo/pretrained/siglip2/siglip2-base-patch16-256
+        params: {intra_weight: 0.9, track_weight: 0.9, loss_weight: 1.0}
+      - representor:
+          arch: resnet18
+          input_size: 224
+          ckpt_path: /path/to/your/model_zoo/pretrained/resnet/resnet18-f37072fd.pth
+        params: {intra_weight: 0.9, track_weight: 0.9, loss_weight: 1.0}
+    trainer:
+      gen_lr: 1.0e-5
+      tracker_lr: 1.0e-3
+      ema_decay: 0.999
+      t_sampling: [1.0, 0.5]
+      grad_accum_steps: 4
+
+training:
+  batch_size: 8
+  total_steps: 500000
+  bf16: true
+  log_every: 50
+  vis_every: 1000
+  save_every: 5000
+
+evaluation:
+  checkpoint: ./outputs/tbsm_in1k_512_latent/tbsm_dit_xl_4_lam=0p9_rho=0p9/tbsm_step_100000.pt
+  weights: ema
+  batch_size: 16
+  num_images: 50000
+  seed: 1
+  dtype: bf16
+  models:
+    - inception
+    - vit_large_patch16_224.mae
+    - vit_large_patch14_dinov2.lvd142m
+    - vit_large_patch14_clip_224.openai
+    - vit_so400m_patch16_siglip_256.v2_webli
+    - convnext
+  no_prc: false
+  eval_mmd: false

@@ -1,0 +1,39 @@
+experiment:
+  save_dir: /path/to/your/outputs/tbsm_mnist_identity
+
+runtime:
+  seed: 42
+
+data:
+  name: mnist
+  data_dir: /path/to/your/data
+  resolution: 32
+  num_classes: 10
+  num_workers: 4
+
+network:
+  name: unet
+  params:
+    in_ch: 3
+    out_ch: 3
+
+method:
+  name: tbsm
+  params:
+    matchers:
+      - representor:
+          arch: identity
+        params:
+          intra_weight: 1.0 # lambda: intra-source weight
+          track_weight: 0.0 # rho: tracked-supervision weight
+    trainer:
+      gen_lr: 1.0e-5
+      tracker_lr: 1.0e-3
+      t_sampling: [] # Empty preserves continuous U[0,1] projectile times
+
+training:
+  batch_size: 128
+  total_steps: 10001
+  log_every: 50
+  vis_every: 500
+  save_every: 5000

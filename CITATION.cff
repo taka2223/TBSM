@@ -1,0 +1,35 @@
+cff-version: 1.2.0
+message: "If you use TBSM in your research, please cite the paper below."
+title: "TBSM: Three-Body Scattering for Generative Modeling"
+type: software
+authors:
+  - family-names: Sun
+    given-names: Peng
+  - family-names: Cheng
+    given-names: Zhenglin
+  - family-names: Liu
+    given-names: Deyuan
+  - family-names: Xie
+    given-names: Jun
+  - family-names: Shang
+    given-names: Xinyi
+  - family-names: Lin
+    given-names: Tao
+repository-code: "https://github.com/sp12138/TBSM"
+preferred-citation:
+  type: generic
+  title: "Three-Body Scattering for Generative Modeling"
+  authors:
+    - family-names: Sun
+      given-names: Peng
+    - family-names: Cheng
+      given-names: Zhenglin
+    - family-names: Liu
+      given-names: Deyuan
+    - family-names: Xie
+      given-names: Jun
+    - family-names: Shang
+      given-names: Xinyi
+    - family-names: Lin
+      given-names: Tao
+  year: 2026
