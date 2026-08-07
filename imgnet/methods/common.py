@@ -9,9 +9,8 @@ class Generator(nn.Module):
     def __init__(self, backbone, decoder=None):
         super().__init__()
         self.backbone = backbone
-        # The frozen decoder maps latent outputs to image space while preserving
-        # input gradients. Share its fixed parameters across EMA copies and omit
-        # them from optimizer and checkpoint state.
+        # The frozen decoder is generator infrastructure: share it with EMA
+        # copies and keep it out of optimizer/checkpoint state.
         object.__setattr__(self, "decoder", decoder)
 
     def __deepcopy__(self, memo):
@@ -24,8 +23,8 @@ class Generator(nn.Module):
             t = torch.zeros(x.shape[0], device=x.device)
         return self.backbone(x, y, t=t)
 
-    def auxiliary_forward(self, x, y, t=None):
-        """Generate an independent source without DDP reducer or buffer synchronization."""
+    def unwrapped_forward(self, x, y, t=None):
+        """Run an extra forward without touching DDP reducer or buffer sync."""
         if t is None:
             t = torch.zeros(x.shape[0], device=x.device)
         backbone = self.backbone

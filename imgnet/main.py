@@ -10,10 +10,9 @@ import torch.distributed as dist
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torchvision.utils import save_image
-import yaml
 
 from builders import build_training_model, module_state_dict
-from builders.common import input_shape_from_config
+from builders.common import input_shape_from_config, load_config
 from builders.datasets import build_dataset
 
 
@@ -30,12 +29,6 @@ def setup_distributed():
 
 def is_main_process(rank):
     return rank == 0
-
-
-def load_config(path):
-    with open(path, "r", encoding="utf-8") as f:
-        cfg = yaml.safe_load(f) or {}
-    return cfg
 
 
 def set_seed(seed):
@@ -58,7 +51,7 @@ def count_parameters(module):
 
 
 def visual_grid_spec(resolution, num_classes):
-    """Return fixed class IDs and samples per class for periodic sample grids."""
+    """Return fixed class ids and samples per class for training demos."""
     if resolution >= 512:
         preferred_classes = [29, 291, 628, 985]
         samples_per_class = 4
@@ -78,7 +71,11 @@ def visual_grid_spec(resolution, num_classes):
 
 
 def save_sec_per_step(save_dir, step, steps_done, step_sec_sum):
-    """Write the running average step time for the current process invocation."""
+    """Write/overwrite the global average sec/step under save_dir.
+
+    Recomputes avg = step_sec_sum / steps_done so it reflects the current
+    global progress, refreshed each time a visual demo grid is saved.
+    """
     avg_sec_per_step = step_sec_sum / steps_done if steps_done > 0 else 0.0
     speed_path = os.path.join(save_dir, "sec_per_step.json")
     with open(speed_path, "w") as f:
@@ -179,7 +176,7 @@ def main():
     autocast_ctx = torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=use_bf16)
     epoch = 0
 
-    # Running step-time totals for this process invocation.
+    # Global accumulators for sec/step over the whole run so far.
     step_sec_sum = 0.0
     step_sec_count = 0
 
@@ -214,7 +211,7 @@ def main():
             torch.cuda.synchronize(device)
         step_sec = time.perf_counter() - step_start
 
-        # Each rank measures locally; rank 0 writes its own running average.
+        # Accumulate global step timing (every rank tracks locally; rank 0 writes).
         step_sec_sum += step_sec
         step_sec_count += 1
 
@@ -246,7 +243,7 @@ def main():
 
     if is_main_process(rank):
         print("Training finished.")
-        # Write the final average for this process invocation.
+        # Final global average sec/step over the whole run.
         speed_path, avg_sec_per_step = save_sec_per_step(
             exp_cfg["save_dir"], train_cfg["total_steps"], step_sec_count, step_sec_sum
         )

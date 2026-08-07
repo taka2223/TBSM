@@ -1,12 +1,9 @@
-# Adapted from NVlabs/PixelDiT and modified for TBSM under NVIDIA NSCLv1.
-# Non-commercial research/evaluation only; see LICENSES/ and THIRD_PARTY_NOTICES.md.
-
 import numpy as np
 import torch
 import torch.nn as nn
 from typing import Optional
 
-from .modules import (
+from .layers import (
     ClassEmbedder,
     FinalLayer,
     FeedForward,
@@ -23,11 +20,11 @@ from .modules import (
 
 class PatchTokenEmbedder(nn.Module):
     def __init__(
-            self,
-            in_chans: int = 3,
-            embed_dim: int = 768,
-            norm_layer = None,
-            bias: bool = True,
+        self,
+        in_chans: int = 3,
+        embed_dim: int = 768,
+        norm_layer=None,
+        bias: bool = True,
     ):
         super().__init__()
         self.in_chans = in_chans
@@ -49,19 +46,27 @@ class AugmentedDiTBlock(nn.Module):
         self.norm2 = RMSNorm(hidden_size, eps=1e-6)
         mlp_hidden_dim = int(hidden_size * mlp_ratio)
         self.mlp = FeedForward(hidden_size, mlp_hidden_dim)
-        self.adaLN_modulation = adaLN_modulation if adaLN_modulation is not None else nn.Sequential(
-            nn.Linear(hidden_size, 6 * hidden_size, bias=True)
+        self.adaLN_modulation = (
+            adaLN_modulation
+            if adaLN_modulation is not None
+            else nn.Sequential(nn.Linear(hidden_size, 6 * hidden_size, bias=True))
         )
 
     def forward(self, x, c, pos, mask=None):
-        shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(c).chunk(6, dim=-1)
-        x = x + gate_msa * self.attn(apply_adaln(self.norm1(x), shift_msa, scale_msa), pos, mask=mask)
+        shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
+            self.adaLN_modulation(c).chunk(6, dim=-1)
+        )
+        x = x + gate_msa * self.attn(
+            apply_adaln(self.norm1(x), shift_msa, scale_msa), pos, mask=mask
+        )
         x = x + gate_mlp * self.mlp(apply_adaln(self.norm2(x), shift_mlp, scale_mlp))
         return x
 
 
 class PixelTokenEmbedder(nn.Module):
-    def __init__(self, in_channels: int, hidden_size_output: int, use_pixel_abs_pos: bool = True):
+    def __init__(
+        self, in_channels: int, hidden_size_output: int, use_pixel_abs_pos: bool = True
+    ):
         super().__init__()
         self.in_channels = int(in_channels)
         self.hidden_size_output = int(hidden_size_output)
@@ -93,10 +98,18 @@ class PixelTokenEmbedder(nn.Module):
             self._pos_cache[key] = pos
             return pos
 
-    def forward(self, inputs: torch.Tensor, img_height: int = None, img_width: int = None, patch_size: int = None):
+    def forward(
+        self,
+        inputs: torch.Tensor,
+        img_height: int = None,
+        img_width: int = None,
+        patch_size: int = None,
+    ):
         if inputs.dim() != 4:
             raise ValueError("PixelTokenEmbedder expects inputs of shape [B,C,H,W]")
-        assert img_height is not None and img_width is not None and patch_size is not None
+        assert (
+            img_height is not None and img_width is not None and patch_size is not None
+        )
         B, C, H, W = inputs.shape
         assert H == img_height and W == img_width
         assert (H % patch_size == 0) and (W % patch_size == 0)
@@ -131,21 +144,29 @@ class PiTBlock(nn.Module):
         self.pixel_dim = int(pixel_hidden_size)
         self.context_dim = int(patch_hidden_size)
         self.patch_size = int(patch_size)
-        self.attn_dim = int(attn_hidden_size) if attn_hidden_size is not None else self.context_dim
-        self.num_heads = int(attn_num_heads) if attn_num_heads is not None else int(num_heads)
-        assert (
-            self.attn_dim % self.num_heads == 0
-        ), "pixel attention hidden size must be divisible by pixel num_heads"
+        self.attn_dim = (
+            int(attn_hidden_size) if attn_hidden_size is not None else self.context_dim
+        )
+        self.num_heads = (
+            int(attn_num_heads) if attn_num_heads is not None else int(num_heads)
+        )
+        assert self.attn_dim % self.num_heads == 0, (
+            "pixel attention hidden size must be divisible by pixel num_heads"
+        )
         p2 = self.patch_size * self.patch_size
         self.compress_to_attn = nn.Linear(p2 * self.pixel_dim, self.attn_dim, bias=True)
         self.expand_from_attn = nn.Linear(self.attn_dim, p2 * self.pixel_dim, bias=True)
         self.norm1 = RMSNorm(self.pixel_dim, eps=1e-6)
-        self.attn = RotaryAttention(self.attn_dim, num_heads=self.num_heads, qkv_bias=False)
+        self.attn = RotaryAttention(
+            self.attn_dim, num_heads=self.num_heads, qkv_bias=False
+        )
         self.norm2 = RMSNorm(self.pixel_dim, eps=1e-6)
         self.mlp = MLP(self.pixel_dim, mlp_ratio=mlp_ratio, drop=0.0)
         self.adaln_post_modulation = bool(adaln_post_modulation)
         n_mod = 4 if self.adaln_post_modulation else 6
-        self.adaLN_modulation = nn.Sequential(nn.Linear(self.context_dim, n_mod * self.pixel_dim * p2, bias=True))
+        self.adaLN_modulation = nn.Sequential(
+            nn.Linear(self.context_dim, n_mod * self.pixel_dim * p2, bias=True)
+        )
         self._pos_cache = dict()
         self._rope_fn = rope_fn if rope_fn is not None else precompute_freqs_cis_2d
 
@@ -157,7 +178,15 @@ class PiTBlock(nn.Module):
         self._pos_cache[key] = pos
         return pos
 
-    def forward(self, x: torch.Tensor, s_cond: torch.Tensor, image_height: int, image_width: int, patch_size: int, mask=None) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        s_cond: torch.Tensor,
+        image_height: int,
+        image_width: int,
+        patch_size: int,
+        mask=None,
+    ) -> torch.Tensor:
         BL, P2, C = x.shape
         if C != self.pixel_dim:
             raise ValueError(f"PiTBlock expected pixel_dim={self.pixel_dim}, got {C}")
@@ -171,7 +200,9 @@ class PiTBlock(nn.Module):
             scale1, shift1, scale2, shift2 = torch.chunk(cond_params, 4, dim=-1)
             x_norm = self.norm1(x)
         else:
-            shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = torch.chunk(cond_params, 6, dim=-1)
+            shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
+                torch.chunk(cond_params, 6, dim=-1)
+            )
             x_norm = apply_adaln(self.norm1(x), shift_msa, scale_msa)
         x_flat = x_norm.view(BL, P2 * self.pixel_dim)
         x_comp = self.compress_to_attn(x_flat).view(B, L, self.attn_dim)
@@ -217,16 +248,27 @@ class PixDiT(nn.Module):
         self.use_pixel_abs_pos = bool(use_pixel_abs_pos)
         self.pit_adaln_post_modulation = bool(pit_adaln_post_modulation)
         if self.pixel_depth <= 0:
-            raise ValueError("PixDiT expects pixel_depth > 0 to preserve the dual-level pipeline")
+            raise ValueError(
+                "PixDiT expects pixel_depth > 0 to preserve the dual-level pipeline"
+            )
 
-        self.pixel_embedder = PixelTokenEmbedder(self.in_channels, self.pixel_hidden_size, use_pixel_abs_pos=self.use_pixel_abs_pos)
-        self.s_embedder = PatchTokenEmbedder(self.in_channels * self.patch_size ** 2, self.hidden_size, bias=True)
+        self.pixel_embedder = PixelTokenEmbedder(
+            self.in_channels,
+            self.pixel_hidden_size,
+            use_pixel_abs_pos=self.use_pixel_abs_pos,
+        )
+        self.s_embedder = PatchTokenEmbedder(
+            self.in_channels * self.patch_size**2, self.hidden_size, bias=True
+        )
         self.t_embedder = TimestepConditioner(self.hidden_size)
         self.y_embedder = ClassEmbedder(self.num_classes + 1, self.hidden_size)
 
         self.final_layer = FinalLayer(self.pixel_hidden_size, self.out_channels)
         self.patch_blocks = nn.ModuleList(
-            [AugmentedDiTBlock(self.hidden_size, self.num_groups) for _ in range(self.patch_depth)]
+            [
+                AugmentedDiTBlock(self.hidden_size, self.num_groups)
+                for _ in range(self.patch_depth)
+            ]
         )
         self.pixel_blocks = nn.ModuleList(
             [
@@ -248,7 +290,9 @@ class PixDiT(nn.Module):
         if (height, width) in self.precompute_pos:
             return self.precompute_pos[(height, width)].to(device)
         else:
-            pos = precompute_freqs_cis_2d(self.hidden_size // self.num_groups, height, width).to(device)
+            pos = precompute_freqs_cis_2d(
+                self.hidden_size // self.num_groups, height, width
+            ).to(device)
             self.precompute_pos[(height, width)] = pos
             return pos
 
@@ -271,7 +315,9 @@ class PixDiT(nn.Module):
     def forward(self, x, t, y, s=None, mask=None):
         B, _, H, W = x.shape
         pos = self.fetch_pos(H // self.patch_size, W // self.patch_size, x.device)
-        x_patches = torch.nn.functional.unfold(x, kernel_size=self.patch_size, stride=self.patch_size).transpose(1, 2)
+        x_patches = torch.nn.functional.unfold(
+            x, kernel_size=self.patch_size, stride=self.patch_size
+        ).transpose(1, 2)
         t_emb = self.t_embedder(t.view(-1)).view(B, -1, self.hidden_size)
         y_emb = self.y_embedder(y).view(B, 1, self.hidden_size)
         c = nn.functional.silu(t_emb + y_emb)
@@ -282,13 +328,24 @@ class PixDiT(nn.Module):
             s = nn.functional.silu(t_emb + s)
         batch_size, length, _ = s.shape
         s_cond = s.view(batch_size * length, self.hidden_size)
-        x_pixels = self.pixel_embedder(x, img_height=H, img_width=W, patch_size=self.patch_size)
+        x_pixels = self.pixel_embedder(
+            x, img_height=H, img_width=W, patch_size=self.patch_size
+        )
         for blk in self.pixel_blocks:
             x_pixels = blk(x_pixels, s_cond, H, W, self.patch_size, mask)
-        x_pixels = self.final_layer(x_pixels)
-        C_out = self.out_channels
-        P2 = self.patch_size * self.patch_size
-        x_pixels = x_pixels.view(B, length, P2, C_out).permute(0, 3, 2, 1).contiguous()
-        x_pixels = x_pixels.view(B, C_out * P2, length)
-        x_img = torch.nn.functional.fold(x_pixels, (H, W), kernel_size=self.patch_size, stride=self.patch_size)
-        return x_img
+
+        def to_image(pixel_tokens):
+            C_out = self.out_channels
+            P2 = self.patch_size * self.patch_size
+            pixel_tokens = (
+                pixel_tokens.view(B, length, P2, C_out).permute(0, 3, 2, 1).contiguous()
+            )
+            pixel_tokens = pixel_tokens.view(B, C_out * P2, length)
+            return torch.nn.functional.fold(
+                pixel_tokens,
+                (H, W),
+                kernel_size=self.patch_size,
+                stride=self.patch_size,
+            )
+
+        return to_image(self.final_layer(x_pixels))

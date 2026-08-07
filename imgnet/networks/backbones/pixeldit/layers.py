@@ -1,6 +1,3 @@
-# Adapted from NVlabs/PixelDiT and modified for TBSM under NVIDIA NSCLv1.
-# Non-commercial research/evaluation only; see LICENSES/ and THIRD_PARTY_NOTICES.md.
-
 import math
 from typing import Tuple
 
@@ -18,13 +15,15 @@ def get_2d_sincos_pos_embed(embed_dim, grid_size, cls_token=False, extra_tokens=
     """
     grid_h = np.arange(grid_size, dtype=np.float32)
     grid_w = np.arange(grid_size, dtype=np.float32)
-    grid = np.meshgrid(grid_w, grid_h)  # Width is the first coordinate.
+    grid = np.meshgrid(grid_w, grid_h)  # here w goes first
     grid = np.stack(grid, axis=0)
 
     grid = grid.reshape([2, 1, grid_size, grid_size])
     pos_embed = get_2d_sincos_pos_embed_from_grid(embed_dim, grid)
     if cls_token and extra_tokens > 0:
-        pos_embed = np.concatenate([np.zeros([extra_tokens, embed_dim]), pos_embed], axis=0)
+        pos_embed = np.concatenate(
+            [np.zeros([extra_tokens, embed_dim]), pos_embed], axis=0
+        )
     return pos_embed
 
 
@@ -47,7 +46,7 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
     assert embed_dim % 2 == 0
     omega = np.arange(embed_dim // 2, dtype=np.float64)
     omega /= embed_dim / 2.0
-    omega = 1.0 / 10000 ** omega  # (D/2,)
+    omega = 1.0 / 10000**omega  # (D/2,)
 
     pos = pos.reshape(-1)  # (M,)
     out = np.einsum("m,d->md", pos, omega)  # (M, D/2), outer product
@@ -77,12 +76,16 @@ class TimestepConditioner(nn.Module):
     def timestep_embedding(t, dim, max_period=10):
         half = dim // 2
         freqs = torch.exp(
-            -math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32, device=t.device) / half
+            -math.log(max_period)
+            * torch.arange(start=0, end=half, dtype=torch.float32, device=t.device)
+            / half
         )
         args = t[..., None].float() * freqs[None, ...]
         embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
         if dim % 2:
-            embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)
+            embedding = torch.cat(
+                [embedding, torch.zeros_like(embedding[:, :1])], dim=-1
+            )
         return embedding
 
     def forward(self, t):
@@ -128,11 +131,12 @@ class FeedForward(nn.Module):
         self.w2 = nn.Linear(hidden_dim, dim, bias=False)
 
     def forward(self, x):
-        x = self.w2(torch.nn.functional.silu(self.w1(x)) * self.w3(x))
-        return x
+        return self.w2(torch.nn.functional.silu(self.w1(x)) * self.w3(x))
 
 
-def precompute_freqs_cis_2d(dim: int, height: int, width: int, theta: float = 10000.0, scale=16.0):
+def precompute_freqs_cis_2d(
+    dim: int, height: int, width: int, theta: float = 10000.0, scale=16.0
+):
     x_pos = torch.linspace(0, scale, width)
     y_pos = torch.linspace(0, scale, height)
     y_pos, x_pos = torch.meshgrid(y_pos, x_pos, indexing="ij")
@@ -145,23 +149,6 @@ def precompute_freqs_cis_2d(dim: int, height: int, width: int, theta: float = 10
     y_cis = torch.polar(torch.ones_like(y_freqs), y_freqs)
     freqs_cis = torch.cat([x_cis.unsqueeze(dim=-1), y_cis.unsqueeze(dim=-1)], dim=-1)
     freqs_cis = freqs_cis.reshape(height * width, -1)
-    return freqs_cis
-
-def precompute_freqs_cis_ex2d(dim: int, height: int, width:int, theta: float = 10000.0, scale=1.0):
-    if isinstance(scale, float):
-        scale = (scale, scale)
-    x_pos = torch.linspace(0, width*scale[0], width)
-    y_pos = torch.linspace(0, height*scale[1], height)
-    y_pos, x_pos = torch.meshgrid(y_pos, x_pos, indexing="ij")
-    y_pos = y_pos.reshape(-1)
-    x_pos = x_pos.reshape(-1)
-    freqs = 1.0 / (theta ** (torch.arange(0, dim, 4)[: (dim // 4)].float() / dim))  # Hc/4
-    x_freqs = torch.outer(x_pos, freqs).float()  # N x Hc/4
-    y_freqs = torch.outer(y_pos, freqs).float()  # N x Hc/4
-    x_cis = torch.polar(torch.ones_like(x_freqs), x_freqs)
-    y_cis = torch.polar(torch.ones_like(y_freqs), y_freqs)
-    freqs_cis = torch.cat([x_cis.unsqueeze(dim=-1), y_cis.unsqueeze(dim=-1)], dim=-1)  # N x Hc/4 x 2
-    freqs_cis = freqs_cis.reshape(height*width, -1)
     return freqs_cis
 
 
@@ -195,7 +182,7 @@ class RotaryAttention(nn.Module):
         self.dim = dim
         self.num_heads = num_heads
         self.head_dim = dim // num_heads
-        self.scale = self.head_dim ** -0.5
+        self.scale = self.head_dim**-0.5
 
         self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
         self.q_norm = norm_layer(self.head_dim) if qk_norm else nn.Identity()
@@ -206,14 +193,26 @@ class RotaryAttention(nn.Module):
 
     def forward(self, x: torch.Tensor, pos, mask) -> torch.Tensor:
         B, N, C = x.shape
-        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 1, 3, 4)
+        qkv = (
+            self.qkv(x)
+            .reshape(B, N, 3, self.num_heads, C // self.num_heads)
+            .permute(2, 0, 1, 3, 4)
+        )
         q, k, v = qkv[0], qkv[1], qkv[2]
         q = self.q_norm(q)
         k = self.k_norm(k)
         q, k = apply_rotary_emb(q, k, freqs_cis=pos)
         q = q.view(B, -1, self.num_heads, C // self.num_heads).transpose(1, 2)
-        k = k.view(B, -1, self.num_heads, C // self.num_heads).transpose(1, 2).contiguous()
-        v = v.view(B, -1, self.num_heads, C // self.num_heads).transpose(1, 2).contiguous()
+        k = (
+            k.view(B, -1, self.num_heads, C // self.num_heads)
+            .transpose(1, 2)
+            .contiguous()
+        )
+        v = (
+            v.view(B, -1, self.num_heads, C // self.num_heads)
+            .transpose(1, 2)
+            .contiguous()
+        )
 
         x = scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=0.0)
 

@@ -2,7 +2,7 @@ import torch.nn as nn
 
 
 class SDVAE(nn.Module):
-    """Frozen SD-VAE mapping between image space and scaled latent space."""
+    """Frozen Stable Diffusion VAE with scaled-latent encode/decode helpers."""
 
     def __init__(self, model_path, multiplier=0.18215):
         super().__init__()

@@ -45,8 +45,12 @@ class ResNetRepresentor(nn.Module):
         children = list(backbone.children())
         self.features = nn.Sequential(*children[:-1])
         self.features_no_avg = nn.Sequential(*children[:-2])
-        self.register_buffer("_mean", torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1))
-        self.register_buffer("_std", torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1))
+        self.register_buffer(
+            "_mean", torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
+        )
+        self.register_buffer(
+            "_std", torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
+        )
 
         for p in self.parameters():
             p.requires_grad_(False)
@@ -65,7 +69,9 @@ class ResNetRepresentor(nn.Module):
         return self._forward_featmap(images)
 
     def _preprocess(self, images):
-        x = F.interpolate(images, size=self.input_size, mode="bilinear", align_corners=False)
+        x = F.interpolate(
+            images, size=self.input_size, mode="bilinear", align_corners=False
+        )
         return (x - self._mean) / self._std
 
     def _forward(self, images):

@@ -1,49 +1,76 @@
 from methods.common import Generator
-from methods.tbsm import RepresentationScattering, TBSM
-from networks.representors import (
-    MAERepresentor,
-    ResNetRepresentor,
-    SigLIP2Representor,
-)
-
-from .common import build_network, device_from_config, finish_build
+from methods.tbsm import RepresentationScatteringField, TBSM
+from networks.representors import create_representor
 from networks.vaes import SDVAE
 
+from .common import (
+    build_network,
+    device_from_config,
+    finish_build,
+    require_existing_path,
+    validate_checkpoint_paths,
+)
 
-def build_representation(cfg):
+
+def build_representor(cfg):
     params = dict(cfg)
     arch = params.pop("arch")
-    if arch == "mae_b":
-        return MAERepresentor(arch=arch, **params)
-    if arch == "siglip2_b":
-        return SigLIP2Representor(arch=arch, **params)
-    if arch == "resnet18":
-        return ResNetRepresentor(arch=arch, **params)
-    raise ValueError(f"Unknown TBSM representor arch={arch!r}")
+    ckpt_path = params.get("ckpt_path")
+    if ckpt_path:
+        require_existing_path(ckpt_path, "representor.ckpt_path")
+    return create_representor(arch, **params)
 
 
-def build_matchers(params, device):
-    matchers_cfg = params.get("matchers")
-    if matchers_cfg is None:
-        raise KeyError("method.params.matchers is required")
+def build_representors(params, device):
+    representor_specs = []
+    for field_config in params["representation_fields"]:
+        representor_cfg = dict(field_config["representor"])
+        loss_weight = representor_cfg.pop("loss_weight")
+        representor_specs.append(
+            (build_representor(representor_cfg).to(device), loss_weight)
+        )
+    return representor_specs
 
-    matchers = []
-    for matcher_cfg in matchers_cfg:
-        representor = build_representation(matcher_cfg["representor"]).to(device)
-        matcher = RepresentationScattering(
+
+def build_representation_fields(params, representation_specs, num_classes, device):
+    field_params = {
+        "lambda_weight": params["lambda"],
+        "rho": params["rho"],
+        "num_classes": num_classes,
+        "feature_norm": params.get("feature_norm", ["mu", "std", "rms"]),
+    }
+    return [
+        RepresentationScatteringField(
             representor=representor,
-            **matcher_cfg["params"],
+            **field_params,
+            loss_weight=loss_weight,
         ).to(device)
-        matchers.append(matcher)
-    return matchers
+        for representor, loss_weight in representation_specs
+    ]
+
+
+def _validate_asset_paths(cfg):
+    validate_checkpoint_paths(cfg)
+    latent_cfg = cfg.get("latent")
+    if latent_cfg is not None:
+        require_existing_path(
+            latent_cfg["decoder_path"],
+            "latent.decoder_path",
+            path_type="directory",
+        )
+    for field_config in cfg["method"]["params"]["representation_fields"]:
+        ckpt_path = field_config["representor"].get("ckpt_path")
+        if ckpt_path:
+            require_existing_path(ckpt_path, "representor.ckpt_path")
 
 
 def build(cfg):
+    _validate_asset_paths(cfg)
     params = cfg["method"]["params"]
     device = device_from_config(cfg)
     num_classes = cfg["data"]["num_classes"]
     backbone = build_network(cfg).to(device)
-    matchers = build_matchers(params, device)
+    representation_specs = build_representors(params, device)
 
     decoder = None
     latent_cfg = cfg.get("latent")
@@ -54,10 +81,12 @@ def build(cfg):
         ).to(device)
 
     generator = Generator(backbone, decoder=decoder).to(device)
+    representation_fields = build_representation_fields(
+        params, representation_specs, num_classes, device
+    )
     model = TBSM(
         generator=generator,
-        matchers=matchers,
-        num_classes=num_classes,
+        representation_fields=representation_fields,
         gen_lr=params["trainer"]["gen_lr"],
         tracker_lr=params["trainer"]["tracker_lr"],
         ema_decay=params["trainer"]["ema_decay"],

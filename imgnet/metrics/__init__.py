@@ -1,1 +1,1 @@
-"""TBSM evaluation metrics and entry points."""
+"""Evaluation metrics and DMLoss-compatible evaluation entrypoints."""

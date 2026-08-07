@@ -1,4 +1,6 @@
-# ImageNet training, sampling, and evaluation dependencies.
+# Runtime dependencies for training, sampling, and evaluation.
+# Python 3.10 or newer is recommended. Install a PyTorch build compatible with
+# the CUDA version available on your system.
 
 torch==2.5.0
 torchvision==0.20.0
@@ -11,7 +13,7 @@ safetensors==0.6.2
 scipy==1.15.3
 requests==2.32.5
 
-# Backbones and frozen representation models.
+# Model/backbone libraries used by DiT/JiT and evaluation representors.
 timm==1.0.28
 transformers==4.56.2
 diffusers==0.35.1

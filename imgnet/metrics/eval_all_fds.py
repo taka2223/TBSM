@@ -1,4 +1,4 @@
-"""Distributed image-generation metrics for TBSM evaluation."""
+"""DMLoss-compatible image generation metrics for TBSM evaluation."""
 
 import csv
 import datetime
@@ -405,6 +405,7 @@ def _load_repr_models(model_names, input_size, repr_input_size=TARGET_SIZE,
                 
             stats_path = FID_STATS_DIR / f"{safe_name}_in{stats_input_size}_t{ts}_stats.npz"
             short = model_short_name(name)
+            # if not os.path.exists(stats_path):
             ref = np.load(stats_path)
 
             pools = [("cls", "mu", "sigma")]

@@ -1,1 +1,1 @@
-"""Feature-distance metrics and reference-feature utilities."""
+"""Frechet-distance metric helpers vendored for DMLoss-compatible evaluation."""

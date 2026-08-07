@@ -1,10 +1,10 @@
-"""PixelDiT backbones for pixel-space TBSM training."""
+"""Adapt the official PixelDiT C2I model to the repository backbone API."""
 
-from .pixdit_core.pixeldit_c2i import PixDiT as _OfficialPixDiT
+from .model import PixDiT as _OfficialPixDiT
 
 
 class PixDiT(_OfficialPixDiT):
-    """Expose PixelDiT through TBSM's ``(x, y, t)`` generator interface."""
+    """Expose PixelDiT with the common ``(x, y, t)`` call convention."""
 
     def forward(self, x, y, t=None, s=None, mask=None):
         if t is None:

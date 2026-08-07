@@ -1,7 +1,7 @@
 experiment:
   save_dir: ./outputs/tbsm_in1k_256_latent/tbsm_dit_xl_2_lam=0p9_rho=0p9
   resume: ""
-  init_weights: /path/to/your/checkpoints/dit_xl_2.pt
+  init_weights: ${DM_MODEL_ZOO}/tbsm_release/ucgm_dit_xl2_in1k_256_sdvae_backbone.pt
 
 runtime:
   nproc_per_node: 8
@@ -10,7 +10,7 @@ runtime:
 
 data:
   name: in1k_latent
-  data_dir: /path/to/your/data/ImageNet-1K/latents/sdvae_f8c4/train_256
+  data_dir: ${IMAGENET_LATENTS_256_DIR}
   resolution: 256
   num_classes: 1000
   num_workers: 8
@@ -19,7 +19,7 @@ latent:
   channels: 4
   downsample_ratio: 8
   multiplier: 0.18215
-  decoder_path: /path/to/your/model_zoo/pretrained/sdvae/sd-vae-ft-ema
+  decoder_path: ${DM_MODEL_ZOO}/pretrained/sdvae/sd-vae-ft-ema
 
 network:
   name: dit_xl_2
@@ -35,22 +35,25 @@ network:
 method:
   name: tbsm
   params:
-    matchers:
+    lambda: 0.9
+    rho: 0.9
+    feature_norm: ["mu", "std", "rms"]
+    representation_fields:
       - representor:
           arch: mae_b
           input_size: 224
-          ckpt_path: /path/to/your/model_zoo/pretrained/mae/vit_base_patch16_224.mae.pth
-        params: {intra_weight: 0.9, track_weight: 0.9, loss_weight: 1.0}
+          ckpt_path: ${DM_MODEL_ZOO}/tbsm_release/mae_vit_b16_in1k_224.pth
+          loss_weight: 1.0
       - representor:
           arch: siglip2_b
           input_size: 256
-          ckpt_path: /path/to/your/model_zoo/pretrained/siglip2/siglip2-base-patch16-256
-        params: {intra_weight: 0.9, track_weight: 0.9, loss_weight: 1.0}
+          ckpt_path: ${DM_MODEL_ZOO}/tbsm_release/siglip2_vit_b16_webli_256
+          loss_weight: 1.0
       - representor:
           arch: resnet18
           input_size: 224
-          ckpt_path: /path/to/your/model_zoo/pretrained/resnet/resnet18-f37072fd.pth
-        params: {intra_weight: 0.9, track_weight: 0.9, loss_weight: 1.0}
+          ckpt_path: ${DM_MODEL_ZOO}/tbsm_release/torchvision_resnet18_in1k_224.pth
+          loss_weight: 1.0
     trainer:
       gen_lr: 1.0e-5
       tracker_lr: 1.0e-3

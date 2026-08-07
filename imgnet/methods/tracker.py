@@ -1,4 +1,4 @@
-"""Query-conditioned scattering tracker for one representation field."""
+"""Conditional scattering tracker used by each representation field."""
 
 import math
 
@@ -6,8 +6,10 @@ import torch
 import torch.nn as nn
 
 
+OUTPUT_MODES = {"field", "potential_grad", "potential"}
+
+
 class ParameterFreeRMSNorm(nn.Module):
-    """RMS normalization without learned affine parameters."""
     def __init__(self, eps=1e-6):
         super().__init__()
         self.eps = eps
@@ -18,7 +20,6 @@ class ParameterFreeRMSNorm(nn.Module):
 
 
 def timestep_embedding(timesteps, dim, max_period=10000):
-    """Create sinusoidal timestep embeddings."""
     half_dim = dim // 2
     frequencies = torch.exp(
         -math.log(max_period)
@@ -47,18 +48,23 @@ def _sincos_embedding_1d(pos, dim, max_period=10000):
 
 
 class SpatialTransformerBlock(nn.Module):
-    """Self-attention and MLP block for spatial feature tokens."""
     def __init__(self, hidden_dim, num_heads, mlp_ratio=4.0):
         super().__init__()
         if hidden_dim % num_heads != 0:
-            raise ValueError(f"hidden_dim={hidden_dim} must be divisible by num_heads={num_heads}")
+            raise ValueError(
+                f"hidden_dim={hidden_dim} must be divisible by num_heads={num_heads}"
+            )
         self.num_heads = num_heads
         self.head_dim = hidden_dim // num_heads
-        self.scale = self.head_dim ** -0.5
+        self.scale = self.head_dim**-0.5
         mlp_dim = int(hidden_dim * mlp_ratio)
         self.norm1 = ParameterFreeRMSNorm()
-        self.qkv = nn.utils.spectral_norm(nn.Linear(hidden_dim, hidden_dim * 3, bias=False))
-        self.proj = nn.utils.spectral_norm(nn.Linear(hidden_dim, hidden_dim, bias=False))
+        self.qkv = nn.utils.spectral_norm(
+            nn.Linear(hidden_dim, hidden_dim * 3, bias=False)
+        )
+        self.proj = nn.utils.spectral_norm(
+            nn.Linear(hidden_dim, hidden_dim, bias=False)
+        )
         self.norm2 = ParameterFreeRMSNorm()
         self.mlp = nn.Sequential(
             nn.utils.spectral_norm(nn.Linear(hidden_dim, mlp_dim, bias=False)),
@@ -79,8 +85,9 @@ class SpatialTransformerBlock(nn.Module):
         return x
 
 
-class Tracker(nn.Module):
-    """Predict the tracked vector from a representation query, class, and timestep."""
+class ScatteringTracker(nn.Module):
+    """Return a tracked field, a potential gradient field, or a potential."""
+
     def __init__(
         self,
         num_classes,
@@ -90,13 +97,18 @@ class Tracker(nn.Module):
         depth=4,
         num_heads=8,
         mlp_ratio=4.0,
-        use_potential_grad=False,
+        output_mode="field",
     ):
         super().__init__()
         self.feat_dim = feat_dim
         self.hidden_dim = hidden_dim
         self.time_dim = time_dim
-        self.use_potential_grad = bool(use_potential_grad)
+        if output_mode not in OUTPUT_MODES:
+            raise ValueError(
+                f"Unknown tracker output_mode: {output_mode}; "
+                f"expected one of {sorted(OUTPUT_MODES)}"
+            )
+        self.output_mode = output_mode
         self.register_buffer("_pos_embed_cache", torch.empty(0), persistent=False)
         self._pos_embed_cache_key = None
 
@@ -117,14 +129,18 @@ class Tracker(nn.Module):
             ParameterFreeRMSNorm(),
             nn.SiLU(),
         )
-        self.spatial_blocks = nn.ModuleList([
-            SpatialTransformerBlock(hidden_dim, num_heads=num_heads, mlp_ratio=mlp_ratio)
-            for _ in range(depth)
-        ])
+        self.spatial_blocks = nn.ModuleList(
+            [
+                SpatialTransformerBlock(
+                    hidden_dim, num_heads=num_heads, mlp_ratio=mlp_ratio
+                )
+                for _ in range(depth)
+            ]
+        )
         self.out_proj = nn.Linear(hidden_dim, feat_dim, bias=False)
         nn.init.zeros_(self.out_proj.weight)
-        if self.use_potential_grad:
-            self.refine = nn.Sequential(
+        self.potential_head = (
+            nn.Sequential(
                 nn.utils.spectral_norm(nn.Linear(feat_dim, hidden_dim, bias=False)),
                 ParameterFreeRMSNorm(),
                 nn.SiLU(),
@@ -133,16 +149,17 @@ class Tracker(nn.Module):
                 nn.SiLU(),
                 nn.utils.spectral_norm(nn.Linear(hidden_dim, 1, bias=False)),
             )
-        else:
-            self.refine = None
+            if output_mode != "field"
+            else None
+        )
 
-    def _position_embedding(self, N, device, dtype):
-        key = (N, device.type, device.index, dtype)
+    def _position_embedding(self, num_tokens, device, dtype):
+        key = (num_tokens, device.type, device.index, dtype)
         if self._pos_embed_cache_key == key and self._pos_embed_cache.numel() > 0:
             return self._pos_embed_cache
 
-        side = int(math.sqrt(N))
-        if side * side == N:
+        side = int(math.sqrt(num_tokens))
+        if side * side == num_tokens:
             grid_y, grid_x = torch.meshgrid(
                 torch.arange(side, device=device),
                 torch.arange(side, device=device),
@@ -152,12 +169,15 @@ class Tracker(nn.Module):
             pos_x = grid_x.reshape(-1)
             dim_y = self.hidden_dim // 2
             dim_x = self.hidden_dim - dim_y
-            pos_embed = torch.cat([
-                _sincos_embedding_1d(pos_y, dim_y),
-                _sincos_embedding_1d(pos_x, dim_x),
-            ], dim=-1)
+            pos_embed = torch.cat(
+                [
+                    _sincos_embedding_1d(pos_y, dim_y),
+                    _sincos_embedding_1d(pos_x, dim_x),
+                ],
+                dim=-1,
+            )
         else:
-            pos = torch.arange(N, device=device)
+            pos = torch.arange(num_tokens, device=device)
             pos_embed = _sincos_embedding_1d(pos, self.hidden_dim)
 
         pos_embed = pos_embed.to(dtype=dtype).unsqueeze(0)
@@ -165,19 +185,21 @@ class Tracker(nn.Module):
         self._pos_embed_cache_key = key
         return pos_embed
 
-    def forward(self, y, x_cond, t):
-        class_labels = y
-        query_tokens = x_cond
-        timesteps = t
+    def forward(self, condition, query, time):
+        class_labels = condition
+        query_tokens = query
+        timesteps = time
         differentiable_query = query_tokens
-        if self.refine is not None and not differentiable_query.requires_grad:
+        if self.output_mode == "potential_grad" and not query_tokens.requires_grad:
             differentiable_query = query_tokens.clone().detach().requires_grad_(True)
         _, num_tokens, _ = differentiable_query.shape
 
         class_embedding = self.label_emb(class_labels.reshape(-1).long())
         time_embedding = timestep_embedding(timesteps.reshape(-1) * 1000, self.time_dim)
         projected_time = self.time_mlp(time_embedding)
-        conditioning = self.cond_fuse(torch.cat([class_embedding, projected_time], dim=-1))
+        conditioning = self.cond_fuse(
+            torch.cat([class_embedding, projected_time], dim=-1)
+        )
 
         hidden_tokens = (
             self.x_proj(differentiable_query)
@@ -188,15 +210,15 @@ class Tracker(nn.Module):
         )
         for block in self.spatial_blocks:
             hidden_tokens = block(hidden_tokens)
-        tracked_vector = self.out_proj(hidden_tokens)
-        if self.refine is None:
-            return tracked_vector
+        predicted_field = self.out_proj(hidden_tokens)
+        if self.output_mode == "field":
+            return predicted_field
 
-        # Sum per-token scalar potentials and differentiate the result with
-        # respect to the tracker query.
-        energy = self.refine(tracked_vector + differentiable_query).sum()
+        token_potential = self.potential_head(predicted_field)
+        if self.output_mode == "potential":
+            return token_potential.mean(dim=1).squeeze(-1)
         return torch.autograd.grad(
-            outputs=energy,
+            outputs=token_potential.sum(),
             inputs=differentiable_query,
             create_graph=True,
             retain_graph=True,

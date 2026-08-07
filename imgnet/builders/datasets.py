@@ -12,7 +12,7 @@ from safetensors import safe_open
 
 
 class ImageNetLatentDataset(torch.utils.data.Dataset):
-    """Load ImageNet latent shards and randomly choose original or flipped latents."""
+    """Randomly read original/flipped ImageNet latents from sharded safetensors."""
 
     def __init__(self, root, multiplier=1.0):
         self.multiplier = float(multiplier)
@@ -175,8 +175,10 @@ def build_dataset(cfg):
         data_dir = train_dir if os.path.exists(train_dir) else raw_data_dir
         cache_dir = data_cfg.get("cache_dir")
         if cache_dir is None:
-            # Store the transform-independent ImageFolder index two levels above
-            # the run directory so resolutions and runs can reuse it.
+            # Shared, transform-agnostic metadata cache at <outputs>/dataset_cache.
+            # save_dir is always "outputs/<group>/<run>", so go up two levels to reach
+            # the outputs root. The cache stores only the file list + class mapping,
+            # so it is safe to share across resolutions (e.g. 256 / 512) and runs.
             cache_dir = os.path.join(cfg["experiment"]["save_dir"], "..", "..", "dataset_cache")
         cache_dir = os.path.abspath(cache_dir)
 

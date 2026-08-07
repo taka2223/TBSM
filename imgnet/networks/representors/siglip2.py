@@ -11,7 +11,7 @@ from .utils import pretrained_path
 
 
 class SigLIP2Representor(nn.Module):
-    """Frozen SigLIP2-B encoder exposing final-layer patch feature maps."""
+    """SigLIP2 vision encoder adapted to TBSM's representor interface."""
 
     _MODEL_ALIASES = {
         "siglip2_b": "siglip2_b",
@@ -36,7 +36,9 @@ class SigLIP2Representor(nn.Module):
 
         name = self._MODEL_ALIASES.get(arch, arch)
         if name not in self._MODEL_MAP:
-            raise KeyError(f"Unknown SigLIP2 model: {arch}. Available options: {sorted(self._MODEL_ALIASES)}")
+            raise KeyError(
+                f"Unknown SigLIP2 model: {arch}. Available options: {sorted(self._MODEL_ALIASES)}"
+            )
 
         try:
             from transformers import SiglipVisionModel
@@ -55,7 +57,9 @@ class SigLIP2Representor(nn.Module):
             if local_dir.is_file():
                 local_dir = local_dir.parent
             if not local_dir.is_dir():
-                raise FileNotFoundError(f"SigLIP2 local model directory not found: {local_dir}")
+                raise FileNotFoundError(
+                    f"SigLIP2 local model directory not found: {local_dir}"
+                )
             self.model = SiglipVisionModel.from_pretrained(str(local_dir))
         else:
             self.model = SiglipVisionModel.from_pretrained(self.model_id)
@@ -86,17 +90,32 @@ class SigLIP2Representor(nn.Module):
     def _preprocess(self, images):
         x = images
         if tuple(x.shape[-2:]) != (self.input_size, self.input_size):
-            x = F.interpolate(x, size=(self.input_size, self.input_size), mode="bicubic", align_corners=False)
+            x = F.interpolate(
+                x,
+                size=(self.input_size, self.input_size),
+                mode="bicubic",
+                align_corners=False,
+            )
         return (x - self._mean) / self._std
 
     def _tokens(self, images, no_grad=True):
         if no_grad:
             with torch.no_grad():
-                out = self.model(self._preprocess(images), output_hidden_states=not self.use_post_layernorm)
+                out = self.model(
+                    self._preprocess(images),
+                    output_hidden_states=not self.use_post_layernorm,
+                )
         else:
-            out = self.model(self._preprocess(images), output_hidden_states=not self.use_post_layernorm)
+            out = self.model(
+                self._preprocess(images),
+                output_hidden_states=not self.use_post_layernorm,
+            )
 
-        if not self.use_post_layernorm and hasattr(out, "hidden_states") and out.hidden_states is not None:
+        if (
+            not self.use_post_layernorm
+            and hasattr(out, "hidden_states")
+            and out.hidden_states is not None
+        ):
             out = out.hidden_states[-1]
         elif hasattr(out, "last_hidden_state"):
             out = out.last_hidden_state
@@ -104,7 +123,9 @@ class SigLIP2Representor(nn.Module):
             out = out[-1]
 
         if out.ndim != 3:
-            raise RuntimeError(f"Expected SigLIP2 tokens with shape [B, N, C], got {tuple(out.shape)}")
+            raise RuntimeError(
+                f"Expected SigLIP2 tokens with shape [B, N, C], got {tuple(out.shape)}"
+            )
         return out
 
     def _forward(self, images):
@@ -115,5 +136,7 @@ class SigLIP2Representor(nn.Module):
         b, n, c = tokens.shape
         h = w = int(math.isqrt(n))
         if h * w != n:
-            raise RuntimeError(f"Cannot reshape {n} SigLIP2 patch tokens into a square feature map")
+            raise RuntimeError(
+                f"Cannot reshape {n} SigLIP2 patch tokens into a square feature map"
+            )
         return tokens.transpose(1, 2).reshape(b, c, h, w)

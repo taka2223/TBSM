@@ -242,7 +242,7 @@ class InceptionE2(nn.Module):
 
 
 class InceptionV3(nn.Module):
-    """Return InceptionV3 pooled features and unbiased logits."""
+    """tf-compatible InceptionV3. returns (pool_2048, logits_unbiased)."""
 
     def __init__(self, normalize=True):
         super().__init__()
@@ -419,7 +419,10 @@ class LPIPS(nn.Module):
         logger.info(f"Loaded pretrained LPIPS loss from {ckpt}")
 
     def forward(self, input: Tensor, target: Tensor) -> Tensor:
-        # Inputs are already ImageNet-normalized, so no additional scaling is applied.
+        # we assume input and target are imagenet-normalized.
+        # see https://github.com/richzhang/PerceptualSimilarity/issues/86#issuecomment-1578100825
+        # x (0-1), x = (x - imgnet_mean)/imgnet_val, then no need to use scaling layer.
+        # in0_input, in1_input = (self.scaling_layer(input), self.scaling_layer(target))
         outs0, outs1 = self.net(input), self.net(target)
         val = sum(
             spatial_average(lin.model((normalize_tensor(o0) - normalize_tensor(o1)) ** 2))

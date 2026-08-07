@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import torch.nn as nn
 
-from .denoiser_jit import JiTDenoiser_models
+from .denoiser import JiTDenoiser_models
 
 
 class JiTBackboneAdapter(nn.Module):

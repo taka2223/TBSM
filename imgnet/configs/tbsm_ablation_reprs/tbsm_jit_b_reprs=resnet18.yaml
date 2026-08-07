@@ -1,7 +1,7 @@
 experiment:
   save_dir: ./outputs/tbsm_ablation_reprs/tbsm_jit_b_reprs=resnet18
   resume: ""
-  init_weights: /path/to/your/model_zoo/converted_ckpts/jit_b_model_backbone.pt
+  init_weights: ${DM_MODEL_ZOO}/tbsm_release/jit_b16_in1k_256_pixel_backbone.pt
 
 runtime:
   nproc_per_node: 8
@@ -10,7 +10,7 @@ runtime:
 
 data:
   name: in1k
-  data_dir: /path/to/your/data/ImageNet-1K
+  data_dir: ${IMAGENET_DIR}
   cache_dir: ./outputs/dataset_cache
   resolution: 256
   num_classes: 1000
@@ -25,14 +25,14 @@ network:
 method:
   name: tbsm
   params:
-    matchers:
+    lambda: 1.0
+    rho: 0.5
+    feature_norm: ["mu", "std", "rms"]
+    representation_fields:
       - representor:
           arch: resnet18
           input_size: 224
-          ckpt_path: /path/to/your/model_zoo/pretrained/resnet/resnet18-f37072fd.pth
-        params:
-          intra_weight: 1.0
-          track_weight: 0.5
+          ckpt_path: ${DM_MODEL_ZOO}/tbsm_release/torchvision_resnet18_in1k_224.pth
           loss_weight: 1.0
     trainer:
       gen_lr: 1.0e-5

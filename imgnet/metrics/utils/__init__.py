@@ -1,1 +1,1 @@
-"""Distributed and perceptual-model utilities for evaluation."""
+"""Utility helpers vendored for DMLoss-compatible evaluation."""

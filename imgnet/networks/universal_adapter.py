@@ -2,26 +2,15 @@ import torch
 import torch.nn as nn
 
 
-PREDICTION_ALIASES = {
-    "x": "x",
-    "x0": "x",
-    "data": "x",
-    "noise": "noise",
-    "epsilon": "noise",
-    "eps": "noise",
-    "e": "noise",
-    "velocity": "velocity",
-    "v": "velocity",
-}
-
+PREDICTION_TYPES = {"x", "noise", "velocity"}
 INTERPOLATION_DIRECTIONS = {"data_to_noise", "noise_to_data"}
 
 
 def _canonical_prediction_type(value):
     key = str(value).lower()
-    if key not in PREDICTION_ALIASES:
+    if key not in PREDICTION_TYPES:
         raise ValueError(f"Unknown prediction type: {value}")
-    return PREDICTION_ALIASES[key]
+    return key
 
 
 def _canonical_direction(value):
@@ -52,8 +41,12 @@ class UniversalAdapter(nn.Module):
         self.backbone = backbone
         self.source_prediction_type = _canonical_prediction_type(source_prediction_type)
         self.target_prediction_type = _canonical_prediction_type(target_prediction_type)
-        self.source_interpolation_direction = _canonical_direction(source_interpolation_direction)
-        self.target_interpolation_direction = _canonical_direction(target_interpolation_direction)
+        self.source_interpolation_direction = _canonical_direction(
+            source_interpolation_direction
+        )
+        self.target_interpolation_direction = _canonical_direction(
+            target_interpolation_direction
+        )
 
     def __getattr__(self, name):
         try:
@@ -106,18 +99,42 @@ class UniversalAdapter(nn.Module):
                 noise = x_t - t * velocity
             return x0, noise
 
-        raise ValueError(f"Unknown source prediction type: {self.source_prediction_type}")
+        raise ValueError(
+            f"Unknown source prediction type: {self.source_prediction_type}"
+        )
 
-    def _target_from_x_noise(self, x0, noise):
-        if self.target_prediction_type == "x":
+    def _target_from_x_noise(
+        self, x0, noise, target_prediction_type, target_interpolation_direction
+    ):
+        if target_prediction_type == "x":
             return x0
-        if self.target_prediction_type == "noise":
+        if target_prediction_type == "noise":
             return noise
-        if self.target_prediction_type == "velocity":
-            if self.target_interpolation_direction == "data_to_noise":
+        if target_prediction_type == "velocity":
+            if target_interpolation_direction == "data_to_noise":
                 return noise - x0
             return x0 - noise
-        raise ValueError(f"Unknown target prediction type: {self.target_prediction_type}")
+        raise ValueError(f"Unknown target prediction type: {target_prediction_type}")
+
+    def _convert(self, x, t, raw):
+        source_t = self._source_t(t)
+        if self.source_prediction_type == self.target_prediction_type:
+            if self.source_prediction_type in {"x", "noise"}:
+                return raw
+            if (
+                self.source_interpolation_direction
+                == self.target_interpolation_direction
+            ):
+                return raw
+            return -raw
+
+        x0, noise = self._x_noise_from_source(x, source_t, raw)
+        return self._target_from_x_noise(
+            x0,
+            noise,
+            self.target_prediction_type,
+            self.target_interpolation_direction,
+        )
 
     def forward(self, x, y, t=None, *args, **kwargs):
         if t is None:
@@ -125,11 +142,4 @@ class UniversalAdapter(nn.Module):
         t = t.to(device=x.device, dtype=x.dtype)
         source_t = self._source_t(t)
         raw = self.backbone(x, y, t=source_t, *args, **kwargs)
-        if self.source_prediction_type == self.target_prediction_type:
-            if self.source_prediction_type in {"x", "noise"}:
-                return raw
-            if self.source_interpolation_direction == self.target_interpolation_direction:
-                return raw
-            return -raw
-        x0, noise = self._x_noise_from_source(x, source_t, raw)
-        return self._target_from_x_noise(x0, noise)
+        return self._convert(x, t, raw)

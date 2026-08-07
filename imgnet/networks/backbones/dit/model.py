@@ -12,8 +12,8 @@ import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint
 
 from timm.models.vision_transformer import PatchEmbed, Mlp
-from networks.swiglu_ffn import SwiGLUFFN
-from networks.pos_embed import VisionRotaryEmbeddingFast
+from .pos_embed import VisionRotaryEmbeddingFast
+from .swiglu_ffn import SwiGLUFFN
 
 
 class RMSNorm(torch.nn.Module):
@@ -198,7 +198,7 @@ class DiTBlock(nn.Module):
         use_swiglu=False,
         use_rmsnorm=False,
         wo_shift=False,
-        **block_kwargs
+        **block_kwargs,
     ):
         super().__init__()
 
@@ -217,12 +217,15 @@ class DiTBlock(nn.Module):
             qkv_bias=True,
             qk_norm=use_qknorm,
             use_rmsnorm=use_rmsnorm,
-            **block_kwargs
+            **block_kwargs,
         )
 
         # Initialize MLP layer
         mlp_hidden_dim = int(hidden_size * mlp_ratio)
-        approx_gelu = lambda: nn.GELU(approximate="tanh")
+
+        def approx_gelu():
+            return nn.GELU(approximate="tanh")
+
         if use_swiglu:
             self.mlp = SwiGLUFFN(hidden_size, int(2 / 3 * mlp_hidden_dim))
         else:
@@ -313,8 +316,6 @@ class DiT(nn.Module):
         use_rmsnorm=True,
         wo_shift=False,
         use_checkpoint=False,
-        aux_time_cond=False,
-        aux_final_output_num=0,
     ):
         super().__init__()
         self.learn_sigma = learn_sigma
@@ -328,22 +329,17 @@ class DiT(nn.Module):
         self.depth = depth
         self.hidden_size = hidden_size
         self.use_checkpoint = use_checkpoint
-        self.aux_final_output_num = aux_final_output_num
 
         self.x_embedder = PatchEmbed(
             input_size, patch_size, in_channels, hidden_size, bias=True
         )
         self.t_embedder = TimestepEmbedder(hidden_size)
-        if aux_time_cond:
-            self.aux_timer = TimestepEmbedder(hidden_size)
-        else:
-            self.aux_timer = None
-            
+
         if self.num_classes >= 2:
             self.y_embedder = LabelEmbedder(
                 num_classes, hidden_size, class_dropout_prob
             )
-            
+
         num_patches = self.x_embedder.num_patches
         # Use fixed sinusoidal positional embeddings.
         self.pos_embed = nn.Parameter(
@@ -375,17 +371,11 @@ class DiT(nn.Module):
                 for _ in range(depth)
             ]
         )
-        
+
         # Main output head.
         self.final_layer = FinalLayer(
             hidden_size, patch_size, self.out_channels, use_rmsnorm=use_rmsnorm
         )
-
-        # Optional auxiliary output heads.
-        self.aux_final_layers = nn.ModuleList([
-            FinalLayer(hidden_size, patch_size, self.out_channels, use_rmsnorm=use_rmsnorm)
-            for _ in range(self.aux_final_output_num)
-        ])
 
         self.initialize_weights()
 
@@ -418,10 +408,6 @@ class DiT(nn.Module):
         nn.init.normal_(self.t_embedder.mlp[0].weight, std=0.02)
         nn.init.normal_(self.t_embedder.mlp[2].weight, std=0.02)
 
-        if self.aux_timer is not None:
-            nn.init.normal_(self.aux_timer.mlp[0].weight, std=0.02)
-            nn.init.normal_(self.aux_timer.mlp[2].weight, std=0.02)
-
         # Zero-initialize AdaLN modulation in every transformer block.
         for block in self.blocks:
             nn.init.constant_(block.adaLN_modulation[-1].weight, 0)
@@ -432,13 +418,6 @@ class DiT(nn.Module):
         nn.init.constant_(self.final_layer.adaLN_modulation[-1].bias, 0)
         nn.init.constant_(self.final_layer.linear.weight, 0)
         nn.init.constant_(self.final_layer.linear.bias, 0)
-
-        # Zero-initialize every auxiliary output head.
-        for aux_layer in self.aux_final_layers:
-            nn.init.constant_(aux_layer.adaLN_modulation[-1].weight, 0)
-            nn.init.constant_(aux_layer.adaLN_modulation[-1].bias, 0)
-            nn.init.constant_(aux_layer.linear.weight, 0)
-            nn.init.constant_(aux_layer.linear.bias, 0)
 
     def unpatchify(self, x):
         """Convert ``[N, T, patch_size**2 * C]`` tokens into ``[N, C, H, W]`` images."""
@@ -452,20 +431,14 @@ class DiT(nn.Module):
         imgs = x.reshape(shape=(x.shape[0], c, h * p, h * p))
         return imgs
 
-    def forward(self, x, t=None, tt=None, c=None):
+    def forward(self, x, t=None, c=None):
         """Run the class-conditional DiT backbone."""
         y = c[0]
         t = t.flatten()
         use_checkpoint = self.use_checkpoint
 
-        x = (
-            self.x_embedder(x) + self.pos_embed
-        )  # (N, T, D)
+        x = self.x_embedder(x) + self.pos_embed  # (N, T, D)
         t_emb = self.t_embedder(t)  # (N, D)
-        if (tt is not None) and (self.aux_timer is not None):
-            tt = tt.flatten()
-            r = t - tt
-            t_emb = t_emb + (r.view(r.shape[0], 1)) * self.aux_timer(r)
 
         if self.num_classes >= 2:
             y = self.y_embedder(y, self.training)  # (N, D)
@@ -479,23 +452,8 @@ class DiT(nn.Module):
             else:
                 x = block(x, c, self.feat_rope)
 
-        # Compute the main prediction.
         fm = self.final_layer(x, c)  # (N, T, patch_size ** 2 * out_channels)
-        fm = self.unpatchify(fm)  # (N, out_channels, H, W)
-
-        # Return directly when no auxiliary heads are configured.
-        if self.aux_final_output_num == 0:
-            return fm
-            
-        # Compute each auxiliary prediction.
-        aux_outputs = []
-        for aux_layer in self.aux_final_layers:
-            aux_m = aux_layer(x, c)
-            aux_m = self.unpatchify(aux_m)
-            aux_outputs.append(aux_m)
-
-        # Return auxiliary predictions first and the main prediction last.
-        return tuple(aux_outputs + [fm])
+        return self.unpatchify(fm)  # (N, out_channels, H, W)
 
     def forward_with_cfg(self, x, t, y, cfg_scale, cfg_interval=None):
         """Apply classifier-free guidance within a timestep interval."""
@@ -504,10 +462,6 @@ class DiT(nn.Module):
             half = x[: len(x) // 2]
             combined = torch.cat([half, half], dim=0)
             model_out = self.forward(combined, t, y)
-
-            # Use the main prediction when auxiliary heads are enabled.
-            if isinstance(model_out, tuple):
-                model_out = model_out[-1]
 
             eps, rest = (
                 model_out[:, : self.in_channels],
@@ -523,10 +477,6 @@ class DiT(nn.Module):
             t = t[: len(t) // 2]
             y = y[: len(y) // 2]
             half_eps = self.forward(half, t, y)
-            
-            if isinstance(half_eps, tuple):
-                half_eps = half_eps[-1]
-                
             eps = torch.cat([half_eps, half_eps], dim=0)
 
         return eps

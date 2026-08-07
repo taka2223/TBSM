@@ -31,6 +31,8 @@ if [ "$deterministic" = "true" ]; then
 fi
 if [ "$nproc_per_node" -eq 1 ]; then
     python main.py --config "$config"
+elif [ -n "${MASTER_PORT:-}" ]; then
+    torchrun --nproc_per_node="$nproc_per_node" --master_port="$MASTER_PORT" main.py --config "$config"
 else
-    torchrun --nproc_per_node="$nproc_per_node" --master_port="${MASTER_PORT:-29500}" main.py --config "$config"
+    torchrun --standalone --nproc_per_node="$nproc_per_node" main.py --config "$config"
 fi

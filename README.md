@@ -100,7 +100,7 @@ For full ImageNet-1K experiments, see the [ImageNet training and evaluation code
 
 - [x] Release a minimal TBSM implementation for quick experimentation
 - [x] Release the ImageNet-1K training codebase
-- [ ] Release ImageNet-1K checkpoints *(by July 28, 2026)*
+- [x] Release ImageNet-1K training assets used by the provided configurations ([Hugging Face](https://huggingface.co/sp12138sp/TBSM))
 - [ ] Release the Qwen-Image-20B checkpoint
 - [ ] Release the Qwen-Image-20B training code
 - [ ] Update the paper
@@ -116,4 +116,4 @@ For full ImageNet-1K experiments, see the [ImageNet training and evaluation code
 
 ## License
 
-This is a mixed-license repository. Unless otherwise noted, original TBSM code is licensed under the [Apache License 2.0](./LICENSE). Vendored or adapted third-party files remain subject to their upstream licenses. In particular, `imgnet/networks/pixdit_core/` is governed by the [NVIDIA License (NSCLv1)](./LICENSES/PixelDiT-NSCLv1.txt), which permits use only for non-commercial research or evaluation. See [Third-Party Notices](./THIRD_PARTY_NOTICES.md) for file-level scope, attribution, and applicable license texts. External model weights and datasets remain subject to their upstream terms.
+This is a mixed-license repository. Unless otherwise noted, original TBSM code is licensed under the [Apache License 2.0](./LICENSE). Vendored or adapted third-party files remain subject to their upstream licenses. In particular, `imgnet/networks/backbones/pixeldit/` is governed by the [NVIDIA License (NSCLv1)](./LICENSES/PixelDiT-NSCLv1.txt), which permits use only for non-commercial research or evaluation. See [Third-Party Notices](./THIRD_PARTY_NOTICES.md) for file-level scope, attribution, and applicable license texts. External model weights and datasets remain subject to their upstream terms.

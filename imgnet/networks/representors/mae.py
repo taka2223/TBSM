@@ -10,11 +10,14 @@ from .utils import pretrained_path
 
 class MAERepresentor(nn.Module):
     """Frozen MAE-B encoder exposing final-layer patch-token feature maps."""
+
     _MODEL_ALIASES = {
         "mae_b": "vit_base_patch16_224.mae",
     }
     _DEFAULT_CKPTS = {
-        "vit_base_patch16_224.mae": pretrained_path("mae", "vit_base_patch16_224.mae.pth"),
+        "vit_base_patch16_224.mae": pretrained_path(
+            "mae", "vit_base_patch16_224.mae.pth"
+        ),
     }
 
     def __init__(self, arch, input_size=224, ckpt_path=None):
@@ -27,7 +30,9 @@ class MAERepresentor(nn.Module):
             ) from exc
 
         if arch not in self._MODEL_ALIASES:
-            raise KeyError(f"Unknown MAE model: {arch}. Available options: {sorted(self._MODEL_ALIASES)}")
+            raise KeyError(
+                f"Unknown MAE model: {arch}. Available options: {sorted(self._MODEL_ALIASES)}"
+            )
         model_name = self._MODEL_ALIASES[arch]
         ckpt_path = ckpt_path or self._DEFAULT_CKPTS.get(model_name)
         if ckpt_path is not None and not Path(ckpt_path).is_file():
@@ -51,8 +56,12 @@ class MAERepresentor(nn.Module):
         self.feat_dim = self.net.num_features
         self.featmap_dim = self.feat_dim
         self.num_prefix_tokens = getattr(self.net, "num_prefix_tokens", 1)
-        self.register_buffer("_mean", torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1))
-        self.register_buffer("_std", torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1))
+        self.register_buffer(
+            "_mean", torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
+        )
+        self.register_buffer(
+            "_std", torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
+        )
 
         for p in self.parameters():
             p.requires_grad_(False)
@@ -71,7 +80,9 @@ class MAERepresentor(nn.Module):
         return self._forward_featmap(images)
 
     def _preprocess(self, images):
-        x = F.interpolate(images, size=self.input_size, mode="bicubic", align_corners=False)
+        x = F.interpolate(
+            images, size=self.input_size, mode="bicubic", align_corners=False
+        )
         return (x - self._mean) / self._std
 
     def _patch_tokens(self, images):
@@ -79,8 +90,10 @@ class MAERepresentor(nn.Module):
         if isinstance(tokens, (tuple, list)):
             tokens = tokens[0]
         if tokens.ndim != 3:
-            raise RuntimeError(f"Expected MAE ViT tokens with shape [B, N, C], got {tuple(tokens.shape)}")
-        return tokens[:, self.num_prefix_tokens:]
+            raise RuntimeError(
+                f"Expected MAE ViT tokens with shape [B, N, C], got {tuple(tokens.shape)}"
+            )
+        return tokens[:, self.num_prefix_tokens :]
 
     def _forward(self, images):
         return self._patch_tokens(images).mean(dim=1)
@@ -90,5 +103,7 @@ class MAERepresentor(nn.Module):
         B, N, C = tokens.shape
         H = W = int(math.sqrt(N))
         if H * W != N:
-            raise RuntimeError(f"Cannot reshape {N} MAE patch tokens into a square feature map")
+            raise RuntimeError(
+                f"Cannot reshape {N} MAE patch tokens into a square feature map"
+            )
         return tokens.transpose(1, 2).reshape(B, C, H, W)

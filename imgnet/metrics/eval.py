@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import copy
 import os
 import random
 import shutil
@@ -17,13 +18,13 @@ from pathlib import Path
 
 import torch
 import torch.distributed as dist
-import yaml
 import numpy as np
 
+from builders.common import load_config
 from metrics import eval_all_fds
 from metrics.utils.distributed_util import get_global_rank, get_world_size
 
-V2_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_EVAL_MODELS = [
     "inception",
     "vit_large_patch16_224.mae",
@@ -43,18 +44,13 @@ def _abs_path(path: str | None, base: Path) -> str | None:
     return str(p.resolve())
 
 
-def _load_yaml(path: str) -> dict:
-    with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
-
-
 def _clone_yaml_obj(obj):
-    return yaml.safe_load(yaml.safe_dump(obj))
+    return copy.deepcopy(obj)
 
 
-def _import_v2_builders():
-    if str(V2_ROOT) not in sys.path:
-        sys.path.insert(0, str(V2_ROOT))
+def _import_builders():
+    if str(PROJECT_ROOT) not in sys.path:
+        sys.path.insert(0, str(PROJECT_ROOT))
     from builders import build_training_model
 
     return build_training_model
@@ -68,15 +64,15 @@ class NoopEMA:
         yield
 
 
-class V2TBSMGenerator(torch.nn.Module):
+class TBSMGenerator(torch.nn.Module):
     def __init__(self, cfg: dict, checkpoint: str | None, weights: str, eval_args):
         super().__init__()
-        build_training_model = _import_v2_builders()
+        build_training_model = _import_builders()
 
         cfg = _clone_yaml_obj(cfg)
-        # Evaluation only needs the generator and EMA weights. Training matchers
-        # can pull external repr checkpoints, so keep them out of eval builds.
-        cfg.setdefault("method", {}).setdefault("params", {})["matchers"] = []
+        cfg.setdefault("method", {}).setdefault("params", {})[
+            "representation_fields"
+        ] = []
         runtime = cfg.setdefault("runtime", {})
         local_rank = int(os.environ.get("LOCAL_RANK", 0))
         device = torch.device(f"cuda:{local_rank}" if torch.cuda.is_available() else "cpu")
@@ -143,11 +139,11 @@ def _build_eval_args(config_path: str, cfg: dict) -> argparse.Namespace:
     eval_cfg = cfg.get("evaluation", {}) or {}
     exp_cfg = cfg["experiment"]
     data_cfg = cfg["data"]
-    save_dir = _abs_path(exp_cfg["save_dir"], V2_ROOT)
+    save_dir = _abs_path(exp_cfg["save_dir"], PROJECT_ROOT)
     checkpoint = eval_cfg.get("checkpoint") or exp_cfg.get("resume")
     if not checkpoint:
         checkpoint = _latest_checkpoint(save_dir, cfg["method"]["name"])
-    checkpoint_abs = _abs_path(checkpoint, V2_ROOT) if checkpoint else ""
+    checkpoint_abs = _abs_path(checkpoint, PROJECT_ROOT) if checkpoint else ""
     if not checkpoint_abs:
         raise FileNotFoundError(
             f"No checkpoint configured or found for eval config: {config_path}"
@@ -159,7 +155,7 @@ def _build_eval_args(config_path: str, cfg: dict) -> argparse.Namespace:
     eval_name = eval_cfg.get("name") or (Path(checkpoint_abs).stem if checkpoint_abs else "latest")
     eval_dir = _abs_path(
         eval_cfg.get("save_dir", os.path.join(save_dir, "eval", eval_name)),
-        V2_ROOT,
+        PROJECT_ROOT,
     )
 
     eval_bsz = int(eval_cfg.get("batch_size", eval_cfg.get("eval_bsz", 256)))
@@ -212,7 +208,7 @@ def parse_args():
     launcher.add_argument("config", help="Path to a TBSM YAML config")
     launch_args = launcher.parse_args()
     config_path = _abs_path(launch_args.config, Path.cwd())
-    cfg = _load_yaml(config_path)
+    cfg = load_config(config_path)
     return _build_eval_args(config_path, cfg), cfg
 
 
@@ -246,7 +242,7 @@ def setup_eval(args):
 def main():
     args, cfg = parse_args()
     setup_eval(args)
-    model = V2TBSMGenerator(cfg, args.load_from, args.weights, args).cuda().eval()
+    model = TBSMGenerator(cfg, args.load_from, args.weights, args).cuda().eval()
     args.current_step = model.current_step
     eval_all_fds.main_generate(args, model, NoopEMA())
 
