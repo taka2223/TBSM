@@ -1,12 +1,12 @@
 experiment:
-  save_dir: /path/to/your/outputs/tbsm_mnist_resnet
+  save_dir: path/to/your/outputs/tbsm_mnist_resnet
 
 runtime:
   seed: 42
 
 data:
   name: mnist
-  data_dir: /path/to/your/data
+  data_dir: path/to/your/data
   resolution: 32
   num_classes: 10
   num_workers: 4
@@ -24,7 +24,7 @@ method:
       - representor:
           arch: resnet18
           input_size: 224
-          ckpt_path: /path/to/your/resnet18-f37072fd.pth
+          ckpt_path: path/to/your/resnet18-f37072fd.pth
         params:
           intra_weight: 0.9 # lambda: intra-source weight
           track_weight: 0.9 # rho: tracked-supervision weight

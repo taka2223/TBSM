@@ -1,12 +1,12 @@
 experiment:
-  save_dir: /path/to/your/outputs/tbsm_mnist_identity
+  save_dir: path/to/your/outputs/tbsm_mnist_identity
 
 runtime:
   seed: 42
 
 data:
   name: mnist
-  data_dir: /path/to/your/data
+  data_dir: path/to/your/data
   resolution: 32
   num_classes: 10
   num_workers: 4

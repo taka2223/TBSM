@@ -38,6 +38,7 @@ def build_representation_fields(params, representation_specs, num_classes, devic
         "rho": params["rho"],
         "num_classes": num_classes,
         "feature_norm": params.get("feature_norm", ["mu", "std", "rms"]),
+        "field_config": params.get("field", {"type": "energy"}),
     }
     return [
         RepresentationScatteringField(

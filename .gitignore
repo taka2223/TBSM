@@ -56,3 +56,7 @@ htmlcov/
 outputs/
 runs/
 wandb/
+data/pretrained/
+
+# Local runtime caches
+.runtime/

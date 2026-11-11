@@ -1,4 +1,5 @@
 from .backbones import (
+    sit_l_2,
     dit_xl_2,
     dit_xl_4,
     jit_b,
@@ -11,6 +12,7 @@ from .universal_adapter import UniversalAdapter
 
 
 _BACKBONE_FACTORIES = {
+    "sit_l_2": sit_l_2,
     "dit_xl_2": dit_xl_2,
     "dit_xl_4": dit_xl_4,
     "jit_b": jit_b,

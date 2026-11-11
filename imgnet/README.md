@@ -13,12 +13,12 @@ pip install -r requirements.txt
 Download ImageNet-1K and set the local asset locations before selecting a YAML configuration:
 
 ```bash
-export DM_MODEL_ZOO=/path/to/your/model_zoo
-export DM_DATA_ZOO=/path/to/your/data_zoo
-export IMAGENET_DIR=/path/to/your/imagenet-1k
+export DM_MODEL_ZOO=path/to/your/model_zoo
+export DM_DATA_ZOO=path/to/your/data_zoo
+export IMAGENET_DIR=path/to/your/imagenet-1k
 # Required only for latent-space configurations:
-export IMAGENET_LATENTS_256_DIR=/path/to/your/imagenet-latents/sdvae_f8c4/train_256
-export IMAGENET_LATENTS_512_DIR=/path/to/your/imagenet-latents/sdvae_f8c4/train_512
+export IMAGENET_LATENTS_256_DIR=path/to/your/imagenet-latents/sdvae_f8c4/train_256
+export IMAGENET_LATENTS_512_DIR=path/to/your/imagenet-latents/sdvae_f8c4/train_512
 ```
 
 The generator initializations and frozen representation checkpoints used by the provided TBSM configurations are available in the public [TBSM Hugging Face repository](https://huggingface.co/sp12138sp/TBSM). Download them into `$DM_MODEL_ZOO/tbsm_release`:

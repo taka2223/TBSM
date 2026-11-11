@@ -7,6 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from methods.tracker import ScatteringTracker
+from methods.sigreg import IMQGaussianField, SlicedGaussianField
 
 
 def _distributed_mean(x):
@@ -31,12 +32,24 @@ class RepresentationScatteringField(nn.Module):
         ema_beta=0.999,
         loss_weight=1.0,
         feature_norm=("mu", "std", "rms"),
+        field_config=None,
     ):
         super().__init__()
         self.representor = representor
         self.lambda_weight = float(lambda_weight)
         self.rho = float(rho)
         self.loss_weight = float(loss_weight)
+        field_cfg = dict(field_config or {})
+        self.field_type = field_cfg.pop("type", "energy")
+        if self.field_type not in {"energy", "sigreg", "sigreg_imq"}:
+            raise ValueError(f"Unknown field type: {self.field_type}")
+        sigreg_types = {"sigreg": SlicedGaussianField, "sigreg_imq": IMQGaussianField}
+        self.sigreg = (
+            sigreg_types[self.field_type](**field_cfg)
+            if self.field_type in sigreg_types else None
+        )
+        if self.field_type == "energy" and field_cfg:
+            raise ValueError(f"Unsupported energy-field options: {field_cfg}")
 
         if not isinstance(feature_norm, (list, tuple)):
             raise TypeError("feature_norm must be a list or tuple")
@@ -113,17 +126,20 @@ class RepresentationScatteringField(nn.Module):
     @torch.no_grad()
     def _frozen_target(self, real_source, projectile, generated_source, tracked_vector):
         projectile_detached = projectile.detach()
-        inter_offset = (real_source - projectile_detached).flatten(1)
-        intra_offset = (generated_source - projectile_detached).flatten(1)
-
-        inter_radius = torch.linalg.vector_norm(inter_offset, ord=2, dim=-1, keepdim=True)
-        intra_radius = torch.linalg.vector_norm(intra_offset, ord=2, dim=-1, keepdim=True)
-        radius_scale = math.sqrt(projectile.shape[-1] * projectile.shape[-2])
-
-        b_r = inter_offset / (inter_radius + 1e-6) * radius_scale
-        b_s = intra_offset / (intra_radius + 1e-6) * radius_scale
-        # v_lambda = b_r - lambda * b_s.
-        lambda_vector = (b_r - b_s * self.lambda_weight).view_as(projectile)
+        if self.sigreg is not None:
+            lambda_vector = self.sigreg(
+                projectile_detached, real_source, generated_source, self.lambda_weight
+            )
+        else:
+            inter_offset = (real_source - projectile_detached).flatten(1)
+            intra_offset = (generated_source - projectile_detached).flatten(1)
+            inter_radius = torch.linalg.vector_norm(inter_offset, ord=2, dim=-1, keepdim=True)
+            intra_radius = torch.linalg.vector_norm(intra_offset, ord=2, dim=-1, keepdim=True)
+            radius_scale = math.sqrt(projectile.shape[-1] * projectile.shape[-2])
+            b_r = inter_offset / (inter_radius + 1e-6) * radius_scale
+            b_s = intra_offset / (intra_radius + 1e-6) * radius_scale
+            # v_lambda = b_r - lambda * b_s.
+            lambda_vector = (b_r - b_s * self.lambda_weight).view_as(projectile)
         # v_mix = (1 - rho) * v_lambda + rho * v_trk.
         mixed_vector = lambda_vector if tracked_vector is None else (
             tracked_vector * self.rho + lambda_vector * (1 - self.rho)

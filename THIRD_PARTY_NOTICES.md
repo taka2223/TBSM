@@ -4,6 +4,7 @@ Unless otherwise noted, original TBSM code is licensed under the repository's [A
 
 | Component | Local scope | License |
 |---|---|---|
+| [SiT](https://github.com/willisma/SiT) | `imgnet/networks/backbones/sit/model.py`, upstream commit `cbde832a40b153ccc79603412409da9c9b0c568c` | [MIT](./LICENSES/SiT-MIT.txt) |
 | [PixelDiT](https://github.com/NVlabs/PixelDiT) | `imgnet/networks/backbones/pixeldit/{layers.py,model.py,wrapper.py}` | [NVIDIA NSCLv1](./LICENSES/PixelDiT-NSCLv1.txt) |
 | [FD-Loss](https://github.com/Jiawei-Yang/FD-Loss) | adapted portions of `imgnet/metrics/{eval_all_fds.py,frechet_distance/**,utils/**}` | [MIT](./LICENSES/MIT-NOTICES.txt) |
 | [JiT](https://github.com/LTH14/JiT) | `imgnet/networks/backbones/jit/{adapter.py,denoiser.py,layers.py,model.py}` | [MIT](./LICENSES/MIT-NOTICES.txt) |

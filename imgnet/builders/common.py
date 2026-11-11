@@ -131,7 +131,7 @@ def extract_backbone_state(state):
 def load_backbone_state(backbone, state):
     raw_backbone = raw_module(backbone)
     candidates = [state]
-    for prefix in ("model.", "backbone."):
+    for prefix in ("model.", "backbone.", "backbone.model."):
         candidates.append(
             {
                 key if key.startswith(prefix) else f"{prefix}{key}": value
@@ -194,11 +194,16 @@ def load_checkpoint(method_model, cfg):
         return ckpt.get("step", "unknown")
 
     if init_weights:
-        ckpt = torch.load(init_weights, map_location=device, weights_only=True)
+        ckpt = torch.load(init_weights, map_location="cpu", weights_only=True)
         state = select_init_state(ckpt)
         backbone_state = extract_backbone_state(state)
         result = load_backbone_state(method_model.generator.backbone, backbone_state)
         if result.missing_keys or result.unexpected_keys:
+            if cfg["experiment"].get("strict_init", False):
+                raise RuntimeError(
+                    f"Incomplete initialization: missing={result.missing_keys}, "
+                    f"unexpected={result.unexpected_keys}"
+                )
             print(
                 "Loaded init_weights with "
                 f"{len(result.missing_keys)} missing keys and "
