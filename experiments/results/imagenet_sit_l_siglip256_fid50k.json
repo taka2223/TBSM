@@ -1,0 +1,18 @@
+{
+  "dataset": "ImageNet 256x256",
+  "backbone": "DiT-L/2",
+  "latent_space": "Stable Diffusion VAE",
+  "checkpoint_step": 100000,
+  "weights": "ema",
+  "num_images": 50000,
+  "seed": 0,
+  "covariance": "population",
+  "results": {
+    "tbsm": {
+      "fid": 5.346696956505015
+    },
+    "sigreg_imq": {
+      "fid": 5.3389405674036485
+    }
+  }
+}
