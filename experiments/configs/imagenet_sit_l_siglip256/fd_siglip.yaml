@@ -1,0 +1,69 @@
+experiment:
+  save_dir: outputs/imagenet_sit_l_siglip256/fd_siglip_seed0
+  resume: ''
+  init_weights: ${SIT_L_2_256_WEIGHTS}
+  strict_init: true
+runtime:
+  nproc_per_node: 1
+  seed: 0
+  deterministic: false
+data:
+  name: in1k_moments
+  data_dir: ${IMAGENET_MOMENTS_DIR}
+  resolution: 256
+  num_classes: 1000
+  num_workers: 4
+latent:
+  channels: 4
+  downsample_ratio: 8
+  multiplier: 0.18215
+  decoder_path: ${SDVAE_MODEL_DIR}
+network:
+  name: sit_l_2
+  params:
+    input_size: 32
+    in_channels: 4
+    learn_sigma: true
+    class_dropout_prob: 0.1
+  adapter:
+    source_prediction_type: velocity
+    source_interpolation_direction: noise_to_data
+    target_prediction_type: x
+    target_interpolation_direction: data_to_noise
+method:
+  name: fd_loss
+  params:
+    representation:
+      arch: siglip2_b
+      input_size: 256
+      ckpt_path: ${SIGLIP2_MODEL_DIR}
+      use_post_layernorm: true
+    reference_stats_path: ${FD_SIGLIP_STATS_PATH}
+    fid_norm_eps: 0.01
+    population:
+      size: 50000
+      fill_batch_size: 128
+      ema_beta: 0.999
+      seed: 20000
+    trainer:
+      gen_lr: 1.0e-06
+      ema_decay: 0.999
+      noise_scale: 1.0
+      grad_accum_steps: 1
+training:
+  batch_size: 32
+  total_steps: 100000
+  bf16: true
+  log_every: 10
+  vis_every: 5000
+  save_every: 1000
+  step_unit: optimizer_update
+evaluation:
+  batch_size: 16
+  num_images: 10000
+  every: 20000
+  seed: 0
+  weights: ema
+  inception_path: ${INCEPTION_PICKLE_PATH}
+  ref_stats_path: ${IMAGENET_REF_STATS_PATH}
+  pickle_support_path: ${INCEPTION_SUPPORT_PATH}
